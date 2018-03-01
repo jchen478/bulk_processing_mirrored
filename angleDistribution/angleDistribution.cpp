@@ -243,6 +243,7 @@ void elasticEnergy(float *px, float *py, float *pz,
 	float cx, cy, cz, ang_theta, ang_phi;
 	float zeqx, zeqy, zeqz, zdotz, dum;
 	float yitx, yity, yitz, yieqx, yieqy, yieqz;
+	float pos_theta, pos_phi;
 	int m, i, mi;
 	*Ebend = 0.0;
 	*Etwist = 0.0;
@@ -312,14 +313,19 @@ void elasticEnergy(float *px, float *py, float *pz,
 				}
 				ang_phi = acosf(zdotz);
 			}
-			dtheta[mi] = abs(ang_theta); 
-			dphi[mi] = abs(ang_phi);
-			*thetaAvg = *thetaAvg + ang_theta;
-			*phiAvg = *phiAvg + ang_phi;
+			// calculate elastic energy			
 			*Ebend = *Ebend + ang_theta*ang_theta;
 			*Etwist = *Etwist + ang_phi*ang_phi;
-			if (abs(ang_theta) > *thetaMax) *thetaMax = ang_theta;
-			if (abs(ang_phi) > *phiMax) *phiMax = ang_phi;
+
+			// store angle info
+			pos_theta = fabsf(ang_theta); 
+			pos_phi = fabsf(ang_phi); 
+			dtheta[mi] = pos_theta; 
+			dphi[mi] = pos_phi;
+			*thetaAvg = *thetaAvg + pos_theta;
+			*phiAvg = *phiAvg + pos_phi;
+			if (pos_theta > *thetaMax) *thetaMax = pos_theta;
+			if (pos_phi > *phiMax) *phiMax = pos_phi;
 		}
 	}
 
