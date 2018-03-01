@@ -189,8 +189,8 @@ int main(){
 		}
 		thetaStd /= float(nfib*(nseg-1)-1);	
 		phiStd /= float(nfib*(nseg-1)-1); 
-		thetaStd = sqrt(thetaStd);	
-		phiStd = sqrt(phiStd);	
+		thetaStd = sqrtf(thetaStd);	
+		phiStd = sqrtf(phiStd);	
 		fprintf(Angle,"%8.3f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n", 
 			float(step*config_write)*dt,thetaAvg, phiAvg, thetaStd, phiStd, thetaMax, phiMax);
 		fprintf(Eelastic_file,"%8.3f %10.6f %10.6f %10.6f\n", float(step*config_write)*dt,Ebend, Etwist, Eelastic);
