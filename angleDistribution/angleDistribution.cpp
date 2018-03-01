@@ -14,7 +14,10 @@ void elasticEnergy(float *px, float *py, float *pz,
 	float *R21eq, float *R22eq, float *R23eq,
 	float *R31eq, float *R32eq, float *R33eq,
 	float kb, int nfibC_ID, int nseg,
-	float *Ebend, float *Etwist, float *Eelastic);
+	float *Ebend, float *Etwist, float *Eelastic,
+	float *dphi, float *dtheta,
+	float *phiAvg, float *thetaAvg,
+	float *phiMax, float *thetaMax);
 
 int main(){
 
@@ -26,9 +29,10 @@ int main(){
 	FILE *rxfile, *ryfile, *rzfile;
 	FILE *pxfile, *pyfile, *pzfile;
 	FILE *q0file, *q1file, *q2file, *q3file;
-	FILE *Eelastic_file;
+	FILE *Eelastic_file, *Angle;
 	Parameters = fopen("Parameters.in", "r");
 	Eelastic_file = fopen("Eelastic.txt", "w");
+	Angle = fopen("Angle.txt", "w");
 	Equilibrium_Angles = fopen("Equilibrium_Angles.in", "r");
 	rxfile = fopen("rx.txt", "rb");
 	ryfile = fopen("ry.txt", "rb");
@@ -66,13 +70,15 @@ int main(){
 	fclose(Parameters);
 
 	int step, nConfig;
-	float *thetaeq, *phieq, theta, phi;
+	float *thetaeq, *phieq, theta, phi; 
+	float thetaAvg, phiAvg, thetaStd, phiStd, thetaMax, phiMax; 
 	float *R11eq, *R12eq, *R13eq, *R21eq, *R22eq, *R23eq;
 	float *R11, *R12, *R13, *R21, *R22, *R23;
 	float *R31eq, *R32eq, *R33eq;
 	float *px, *py, *pz;
 	float *rx, *ry, *rz;
 	float *q0, *q1, *q2, *q3;
+	float *dphi, *dtheta; 
 
 	rx = (float*)malloc(nfib*nseg*sizeof(float));
 	ry = (float*)malloc(nfib*nseg*sizeof(float));
@@ -86,6 +92,8 @@ int main(){
 	q3 = (float*)malloc(nfib*nseg*sizeof(float));
 	thetaeq = (float*)malloc(nfib*nseg*sizeof(float));
 	phieq = (float*)malloc(nfib*nseg*sizeof(float));
+	dphi = (float*)malloc(nfib*nseg*sizeof(float));
+	dtheta = (float*)malloc(nfib*nseg*sizeof(float));
 
 
 	R11 = (float*)malloc(nfib*nseg*sizeof(float));
@@ -157,14 +165,34 @@ int main(){
 		fread(&dum, sizeof(float), 1, q3file);
 		fread(q3, sizeof(float), nfib*nseg, q3file);
 		
-		// calculate elastic energy
+		// calculate elastic energy from angles
+		thetaAvg = 0.0; 
+		phiAvg = 0.0;
+		thetaStd = 0.0; 
+		phiStd = 0.0;
+		thetaMax = 0.0; 
+		phiMax = 0.0;
 		elasticEnergy(px, py, pz,
 			rx, ry, rz,
 			q0, q1, q2, q3,
 			R11, R12, R13, R21, R22, R23,
 			R11eq, R12eq, R13eq, R21eq, R22eq,
 			R23eq, R31eq, R32eq, R33eq,
-			kb, nfib, nseg, &Ebend, &Etwist, &Eelastic);
+			kb, nfib, nseg, &Ebend, &Etwist, &Eelastic, 
+			dphi, dtheta, &phiAvg, &thetaAvg, &phiMax, &thetaMax);
+		for (m = 0 ; m < nfib; m++){
+			for (i = 1; i < nseg; i++){
+				mi = m*nseg+i;
+				thetaStd += (dtheta[mi] - thetaAvg)*(dtheta[mi] - thetaAvg); 
+				phiStd += (dphi[mi] - phiAvg)*(dphi[mi] - phiAvg); 
+			}
+		}
+		thetaStd /= float(nfib*(nseg-1)-1);	
+		phiStd /= float(nfib*(nseg-1)-1); 
+		thetaStd = sqrt(thetaStd);	
+		phiStd = sqrt(phiStd);	
+		fprintf(Angle,"%8.3f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n", 
+			float(step*config_write)*dt,thetaAvg, phiAvg, thetaStd, phiStd, thetaMax, phiMax);
 		fprintf(Eelastic_file,"%8.3f %10.6f %10.6f %10.6f\n", float(step*config_write)*dt,Ebend, Etwist, Eelastic);
 	}
 
@@ -172,6 +200,7 @@ int main(){
 	free(px); free(py); free(pz);
 	free(q0); free(q1); free(q2); free(q3);
 	free(thetaeq); free(phieq);
+	free(dphi); free(dtheta); 
 
 	free(R11);
 	free(R12);
@@ -189,7 +218,7 @@ int main(){
 	free(R32eq);
 	free(R33eq);
 
-	fclose(Eelastic_file);
+	fclose(Eelastic_file); fclose(Angle);
 	fclose(rxfile); fclose(ryfile); fclose(rzfile);
 	fclose(pxfile); fclose(pyfile); fclose(pzfile);
 	fclose(q0file); fclose(q1file); fclose(q2file); fclose(q3file);
@@ -206,7 +235,10 @@ void elasticEnergy(float *px, float *py, float *pz,
 	float *R21eq, float *R22eq, float *R23eq,
 	float *R31eq, float *R32eq, float *R33eq,
 	float kb, int nfibC_ID, int nseg,
-	float *Ebend, float *Etwist, float *Eelastic){
+	float *Ebend, float *Etwist, float *Eelastic, 
+	float *dphi, float *dtheta,
+	float *phiAvg, float *thetaAvg,
+	float *phiMax, float *thetaMax){
 
 	float cx, cy, cz, ang_theta, ang_phi;
 	float zeqx, zeqy, zeqz, zdotz, dum;
@@ -280,13 +312,21 @@ void elasticEnergy(float *px, float *py, float *pz,
 				}
 				ang_phi = acosf(zdotz);
 			}
+			dtheta[mi] = abs(ang_theta); 
+			dphi[mi] = abs(ang_phi);
+			*thetaAvg = *thetaAvg + ang_theta;
+			*phiAvg = *phiAvg + ang_phi;
 			*Ebend = *Ebend + ang_theta*ang_theta;
 			*Etwist = *Etwist + ang_phi*ang_phi;
+			if (abs(ang_theta) > *thetaMax) *thetaMax = ang_theta;
+			if (abs(ang_phi) > *phiMax) *phiMax = ang_phi;
 		}
 	}
 
 	*Ebend = kb* (*Ebend) / 2.0 / float(nfibC_ID);
 	*Etwist = 0.67*kb * (*Etwist) / 2.0 / float (nfibC_ID);
 	*Eelastic = *Ebend + *Etwist;
+	*thetaAvg = *thetaAvg / float(4.0*nfibC_ID);
+	*phiAvg = *phiAvg / float(4.0*nfibC_ID);
 }
 
