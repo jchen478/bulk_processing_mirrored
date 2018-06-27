@@ -24,7 +24,8 @@ __global__ void cell(int *bin, int *list, int *bnum,
 	float dy = *dypt;
 	float dz = *dzpt;
 
-	int xbin, ybin, zbin, old, corx, cory, corz;
+	int xbin, ybin, zbin, old;
+	float corx, cory, corz;
 	float rxmi, rymi, rzmi; 
 
 	int mi = threadIdx.x + blockDim.x*blockIdx.x; 
@@ -60,8 +61,9 @@ __global__ void cell(int *bin, int *list, int *bnum,
 		zbin++; 
 	}
 	if (xbin < 0 || ybin < 0 || zbin < 0 || xbin >= nxbin || ybin >= nybin || zbin >= nzbin){
-		printf("error in cell: bin index out of bound\n"); 
-		printf("mi = %4d (%3d %3d %3d) rx ry rz %10f %10f %10f \n", mi, xbin, ybin, zbin, rx[mi], ry[mi], rz[mi]);
+		//printf("error in cell: bin index out of bound\n"); 
+		printf("mi = %4d (%3d %3d %3d) rx %10f %10f %10f dx %6f %6f %6f nxbin %4d %4d %4d cor %f %f %f delta_rx %f\n", 
+			mi, xbin, ybin, zbin, rx[mi], ry[mi], rz[mi], dx, dy, dz, nxbin, nybin, nzbin, corx, cory, corz, delta_rx);
 	}
 
 	old = atomicAdd(bin + xbin + ybin*nxbin + zbin*nxbin*nybin, 1);

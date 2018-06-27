@@ -10,6 +10,8 @@ __global__ void contact(int *total_contact, int *total_overlap,
 	float *sidexpt, float *sideypt, float *sidezpt,
 	float *delta_rxpt, float *rppt, float *over_cutpt,
 	float *contact_cutoffpt, float *rep_cutoffpt,
-	int *maxConpt, int *ncpf, int *clist);
-
+	int *maxConpt, int *ncpf, int *clist,
+	float *Astarpt, float *decattpt, 
+	float *factpt, float *fstarpt,
+	float *total_forc, float *total_dist_inCon);
 #endif /* defined(__AggChar__contact__) */

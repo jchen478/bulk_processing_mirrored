@@ -17,8 +17,10 @@ __global__ void contact(int *total_contact, int *total_overlap,
 	float *sidexpt, float *sideypt, float *sidezpt,
 	float *delta_rxpt, float *rppt, float *over_cutpt,
 	float *contact_cutoffpt, float *rep_cutoffpt,
-	int *maxConpt, int *ncpf, int *clist){
- 
+	int *maxConpt, int *ncpf, int *clist,
+	float *Astarpt, float *decattpt, 
+	float *factpt, float *fstarpt, 
+	float *total_forc, float *total_dist_inCon){
 
 	int mi = threadIdx.x + blockIdx.x*blockDim.x; 
 	int nPair = potConSize[mi];
@@ -26,6 +28,11 @@ __global__ void contact(int *total_contact, int *total_overlap,
 
 	int npcn = *npcnpt;
 	int maxCon = *maxConpt; 
+
+	float Astar = *Astarpt;
+	float fstar = *fstarpt;
+	float decatt = *decattpt;
+	float fact = *factpt;
 
 	float rp = *rppt;
 	float over_cut = *over_cutpt;
@@ -41,9 +48,7 @@ __global__ void contact(int *total_contact, int *total_overlap,
 	float sxx, syy, szz, corx, cory, corz;
 	float rxmi_shift, rymi_shift, rzmi_shift; 
 	float pdotp, xmin, ymin, dx, dy, dz, sep; 
-	float xi[9], yj[9], gij, nijx, nijy, nijz, forc;
-	float Gijx, Gijy, Gijz, Gjix, Gjiy, Gjiz, sep_tmp;
-
+	float xi[9], yj[9], gij, forc, sep_tmp;
 	int nP, nj, ipos, ith, oldmi, oldnj;
 
 	rxmi = rx[mi]; rymi = ry[mi]; rzmi = rz[mi];
@@ -122,15 +127,21 @@ __global__ void contact(int *total_contact, int *total_overlap,
 			ymin = yj[ipos];
 		}		
 		gij = sqrtf(sep);	
+		forc = fstar*expf(-fact*(gij - 2.0)) - Astar*expf(-decatt*(gij - 2.0)*(gij - 2.0));
 		if (gij < 2.0){
 			atomicAdd(total_overlap, 1); // overs
+			forc = fstar*expf(-fact*(gij - 2.0)) - Astar;
 		}
 		if (gij < over_cut){
 			gij = over_cut;
+			forc = fstar*expf(-fact*(gij - 2.0)) - Astar;
 		}
 		if (sep < contact_cutoff){
 
+			atomicAdd(total_forc,forc);
+			atomicAdd(total_dist_inCon,gij-2.0);
 			// contact, mi, nj
+			//printf("%4d %4d\n", mi, nj);
 			oldmi = atomicAdd(ncpf + mi, 1);
 			oldnj = atomicAdd(ncpf + nj, 1);
 			clist[mi*maxCon + oldmi] = nj;

@@ -1,7 +1,6 @@
 #include "cuda_runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <iostream>
 #include <math.h>
 #include "readData.h"
 #include "bnei_set.h"
@@ -27,10 +26,10 @@ using namespace std;
 int main()
 {
 
-	int maxCon = 20;
-	int maxGr = 320; 
-	int maxBin = 320;
-	int npcn = 1000;
+	int maxCon = 50;
+	int maxGr = 672; 
+	int maxBin = 672;
+	int npcn = 5000;
 
 	// 1. Read parameters associated with redispersion cycle ...
 	//    and other fiber parameters
@@ -71,7 +70,6 @@ int main()
 	fscanf(aggChar_input, "%*[^\n]%f", &gamma_tot);
 	fscanf(aggChar_input, "%*[^\n]%d", &box_write);
 	fclose(aggChar_input); 
-
 
 	// 5. Constant calculations
 	int nConfig, ind, nxbinMax, nybinMax, nzbinMax;
@@ -134,6 +132,7 @@ int main()
 	// 4. Allocate memory for both host and device operations
 	int nxbin, nybin, nzbin, num_groups;
 	int total_overlap, total_contact, total_contact_no_joints;
+	float total_forc, total_dist_inCon;
 	float delta_rx, dx, dy, dz;
 	float *rx, *ry, *rz, *px, *py, *pz;
 	rx = (float *)malloc(nfib*nseg*sizeof(float));
@@ -155,8 +154,10 @@ int main()
 	int *d_nfib, *d_nseg, *d_maxBin;
 	int *d_npcn, *d_maxCon, *d_maxGr;
 	int *d_total_overlap, *d_total_contact, *d_total_contact_no_joints;
+	float *d_total_forc, *d_total_dist_inCon;
 	float *d_dx, *d_dy, *d_dz, *d_delta_rx;
 	float *d_sidex, *d_sidey, *d_sidez;
+	float *d_fstar, *d_fact, *d_Astar, *d_decatt;
 	cudaMalloc((void**)&d_nfib, sizeof(int));
 	cudaMalloc((void**)&d_nseg, sizeof(int));
 	cudaMalloc((void**)&d_maxBin, sizeof(int));
@@ -166,6 +167,8 @@ int main()
 	cudaMalloc((void**)&d_total_overlap, sizeof(int));
 	cudaMalloc((void**)&d_total_contact, sizeof(int));
 	cudaMalloc((void**)&d_total_contact_no_joints, sizeof(int));
+	cudaMalloc((void**)&d_total_forc, sizeof(float));
+	cudaMalloc((void**)&d_total_dist_inCon, sizeof(float));
 	cudaMalloc((void**)&d_dx, sizeof(float));
 	cudaMalloc((void**)&d_dy, sizeof(float));
 	cudaMalloc((void**)&d_dz, sizeof(float));
@@ -173,6 +176,10 @@ int main()
 	cudaMalloc((void**)&d_sidey, sizeof(float));
 	cudaMalloc((void**)&d_sidez, sizeof(float));
 	cudaMalloc((void**)&d_delta_rx, sizeof(float));
+	cudaMalloc((void**)&d_fstar, sizeof(float));
+	cudaMalloc((void**)&d_fact, sizeof(float));
+	cudaMalloc((void**)&d_Astar, sizeof(float));
+	cudaMalloc((void**)&d_decatt, sizeof(float));
 
 	int *bnei, *bin, *list, *bnum;
 	int *d_nxbin, *d_nybin, *d_nzbin;
@@ -221,6 +228,10 @@ int main()
 	cudaMemcpy(d_maxGr, &maxGr, sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_npcn, &npcn, sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_nseg, &nseg, sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_decatt, &decatt, sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_fstar, &fstar, sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_fact, &fact, sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_Astar, &Astar, sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_contact_cutoff, &contact_cutoff, sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_rep_cutoff, &rep_cutoff, sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_over_cut, &overlap, sizeof(float), cudaMemcpyHostToDevice);
@@ -280,10 +291,12 @@ int main()
 		dx = sidex / float(nxbin);
 		dy = sidey / float(nybin);
 		dz = sidez / float(nzbin);
-
+		
 		total_contact = 0; 
 		total_contact_no_joints = 0;
 		total_overlap = 0; 
+		total_forc = 0.0;
+		total_dist_inCon = 0.0; 
 		num_groups = 0; 
 
 		// copy memory to device
@@ -298,6 +311,8 @@ int main()
 		cudaMemcpy(d_nybin, &nybin, sizeof(int), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_nzbin, &nzbin, sizeof(int), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_num_groups, &num_groups, sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_total_forc, &total_forc, sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_total_dist_inCon, &total_dist_inCon, sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_total_contact, &total_contact, sizeof(int), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_total_contact_no_joints, &total_contact_no_joints, sizeof(int), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_total_overlap, &total_overlap, sizeof(int), cudaMemcpyHostToDevice);
@@ -307,7 +322,7 @@ int main()
 		cudaMemcpy(d_sidex, &sidex, sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_sidey, &sidey, sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_sidez, &sidez, sizeof(float), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_delta_rx, &d_delta_rx, sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_delta_rx, &delta_rx, sizeof(float), cudaMemcpyHostToDevice);
 
 		// begin characterization
 		// 0. zero the variables
@@ -335,7 +350,8 @@ int main()
 			potCon, potConSize, d_npcn, d_rx, d_ry, d_rz,
 			d_px, d_py, d_pz, d_sidex, d_sidey, d_sidez,
 			d_delta_rx, d_rp, d_over_cut, d_contact_cutoff, 
-			d_rep_cutoff, d_maxCon, ncpf, clist);
+			d_rep_cutoff, d_maxCon, ncpf, clist, d_Astar, d_decatt,
+			d_fact, d_fstar, d_total_forc, d_total_dist_inCon);
 
 		// 5. Find leaders of each contacting group
 		lead << < nfib / 32, nseg * 32 >> >(ncpf, clist, status, nc, lead_clist, d_maxCon, d_maxGr);
@@ -350,11 +366,14 @@ int main()
 		cudaMemcpy(&total_contact_no_joints, d_total_contact_no_joints, sizeof(int), cudaMemcpyDeviceToHost);
 		cudaMemcpy(&total_overlap, d_total_overlap, sizeof(int), cudaMemcpyDeviceToHost);
 		cudaMemcpy(&num_groups, d_num_groups, sizeof(int), cudaMemcpyDeviceToHost);
+		cudaMemcpy(&total_forc, d_total_forc, sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(&total_dist_inCon, d_total_dist_inCon, sizeof(float), cudaMemcpyDeviceToHost);
 
 		// 6. output to file or console
-		fprintf(ContactFile, "%10.4f %8d %4d %6.3f %8d %6.3f %4d\n",
+		fprintf(ContactFile, "%10.4f %8d %4d %6.3f %8d %6.3f %4d %10.6f %10.6f\n",
 			float(step*config_write)*dt, num_groups, total_contact, float(total_contact) / float(nfib),
-			total_contact_no_joints, float(total_contact_no_joints) / float(nfib), total_overlap);
+			total_contact_no_joints, float(total_contact_no_joints) / float(nfib), total_overlap, 
+			total_forc/float(total_contact),total_dist_inCon/float(total_contact));
 	}
 
 	fclose(ContactFile);
@@ -375,7 +394,7 @@ int main()
 	cudaFree(d_dx); cudaFree(d_dy); cudaFree(d_dz); cudaFree(d_delta_rx);
 	cudaFree(d_sidex); cudaFree(d_sidey); cudaFree(d_sidez); cudaFree(d_rp);
 	cudaFree(d_rep_cutoff); cudaFree(d_contact_cutoff); cudaFree(d_over_cut);
-
+	cudaFree(d_decatt); cudaFree(d_fstar); cudaFree(d_Astar); cudaFree(d_fact);
 	cudaFree(ncpf); cudaFree(clist);  cudaFree(d_maxCon);
 	cudaFree(d_maxGr); 
 	cudaFree(bnei); cudaFree(list); cudaFree(bin); cudaFree(bnum);
@@ -384,6 +403,8 @@ int main()
 	cudaFree(potCon);    cudaFree(potConSize);
 	cudaFree(d_total_contact); cudaFree(d_total_overlap); 
 	cudaFree(d_total_contact_no_joints);
+	cudaFree(d_total_forc);  
+	cudaFree(d_total_dist_inCon);
 
 	cudaFree(status); cudaFree(lead_clist);  cudaFree(nc); cudaFree(d_num_groups); 
 	cudaFree(ifiber); cudaFree(ncnt); cudaFree(clist_pos); cudaFree(groupId);

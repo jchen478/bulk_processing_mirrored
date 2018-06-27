@@ -2,8 +2,8 @@ SRCS := $(wildcard *.cu)
 OBJS := $(patsubst %.cu,%.o,$(SRCS))
 
 COMPILER = nvcc  
-NVCCFLAGS = -arch=sm_60  
-LFLAGS = -lm 
+NVCCFLAGS = -arch=sm_60 -rdc=true 
+LFLAGS = -lm -lcudadevrt
 EXE = AggChar
 
 $(EXE): $(OBJS) 
