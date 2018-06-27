@@ -33,12 +33,12 @@ int main()
 
 	// 1. Read parameters associated with redispersion cycle ...
 	//    and other fiber parameters
-	int nfib, nseg, config_write, contact_write, box_write; 
+	int nfib, nseg, config_write, contact_write; 
 	int bdimx, bdimy, bdimz;
 	float rp, contact_cutoff, rep_cutoff, overlap;
 	float dt, strain, sidex, sidey, sidez;
 	float fstar, fact, Astar, decatt;
-	float dx_ref, dy_ref, dz_ref, gamma_low, gamma_tot;
+	float dx_ref, dy_ref, dz_ref;
 
 	FILE *aggChar_input;
 	aggChar_input= fopen("aggChar_input.txt", "r");
@@ -66,13 +66,10 @@ int main()
 	fscanf(aggChar_input, "%*[^\n]%d", &bdimx);
 	fscanf(aggChar_input, "%*[^\n]%d", &bdimy);
 	fscanf(aggChar_input, "%*[^\n]%d", &bdimz);
-	fscanf(aggChar_input, "%*[^\n]%f", &gamma_low);
-	fscanf(aggChar_input, "%*[^\n]%f", &gamma_tot);
-	fscanf(aggChar_input, "%*[^\n]%d", &box_write);
 	fclose(aggChar_input); 
 
-	// 5. Constant calculations
-	int nConfig, ind, nxbinMax, nybinMax, nzbinMax;
+	// Constant calculations
+	int nConfig, nxbinMax, nybinMax, nzbinMax;
 
 	// number of configurations
 	nConfig = int(strain / (dt*float(config_write))) + 1;
@@ -106,24 +103,59 @@ int main()
 	pyfile = fopen("py.txt", "rb");
 	pzfile = fopen("pz.txt", "rb");
 
-	// 3. Read simulation box files
-	FILE *LboxFile;
-	LboxFile = fopen("Lbox.txt", "r");
-	int nLbox = strain / (dt *float(box_write)) + 1;
-	float *boxStrain, *Lx, *Ly, *Lz;
-	float dum2, dum3, dum4;
+	// read simulation case
+	FILE *INSInput;
+	INSInput = fopen("INSinput.gen","r");
+	int simcase;
+	fscanf(INSInput, "%d", &simcase);
+	fclose(INSInput);	
 
-	boxStrain = (float*)malloc(nLbox*sizeof(float));
-	Lx = (float*)malloc(nLbox*sizeof(float));
-	Ly = (float*)malloc(nLbox*sizeof(float));
-	Lz = (float*)malloc(nLbox*sizeof(float));
-
-	for (int i = 0; i < nLbox; i++){
-		fscanf(LboxFile, "%f %f %f %f %f %f %f",
-			boxStrain + i, Lx + i, Ly + i, Lz + i,
-			&dum2, &dum3, &dum4);
+	// Based on simulation cases, determine simulation
+	// box size at every frame
+	float *Lx, *Ly, *Lz; 
+	Lx = (float*)malloc(nConfig*sizeof(float)); 
+	Ly = (float*)malloc(nConfig*sizeof(float));
+	Lz = (float*)malloc(nConfig*sizeof(float));
+	 
+	// case 0 - basis - sidex does not change
+	if (simcase == 0){
+		for (int f = 0; f < nConfig; f++){
+			Lx[f] = sidex; 
+			Ly[f] = sidey; 
+			Lz[f] = sidez; 
+		}
 	}
-	fclose(LboxFile);
+	// case 1 - redispersion - read sidex from Lbox.txt
+	else {
+		// Read box info
+		FILE *BoxFile;
+		float dum;
+		int nLbox, box_write;
+		BoxFile = fopen("box.gen","r");
+		fscanf(BoxFile, "%f", &dum);
+		fscanf(BoxFile, "%*[^\n]%f", &dum); 
+		fscanf(BoxFile, "%*[^\n]%f", &dum); 
+		fscanf(BoxFile, "%*[^\n]%f", &dum); 
+		fscanf(BoxFile, "%*[^\n]%d", &box_write); 
+		fclose(BoxFile); 
+		nLbox = strain / (dt *float(box_write)) + 1;
+
+		// Read box dimensions
+		FILE *LboxFile;
+		float LxTmp, LyTmp, LzTmp;
+		LboxFile = fopen("Lbox.txt","r");
+		for (int box = 0; box < nLbox; box++){
+			fscanf(LboxFile, "%f %f %f %f %f %f %f",
+				&dum, &LxTmp, &LyTmp, &LzTmp, &dum, &dum, &dum);
+			if ((box*box_write) % config_write == 0){
+				Lx[box*box_write/config_write] = LxTmp;
+				Ly[box*box_write/config_write] = LyTmp;
+				Lz[box*box_write/config_write] = LzTmp;
+			}
+		}
+		fclose(LboxFile); 
+	}
+
 
 	// Open output file
 	FILE *ContactFile;
@@ -237,28 +269,6 @@ int main()
 	cudaMemcpy(d_over_cut, &overlap, sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_rp, &rp, sizeof(float), cudaMemcpyHostToDevice);
 
-	// Eliminate box entries that does not match config frames
-	float *LxCondensed, *LyCondensed, *LzCondensed;
-
-	LxCondensed = (float*)malloc(nConfig*sizeof(float));
-	LyCondensed = (float*)malloc(nConfig*sizeof(float));
-	LzCondensed = (float*)malloc(nConfig*sizeof(float));
-
-	ind = 0; 
-	for (int step = 0; step < nConfig; step++){
-		for (int m = ind; m < nLbox; m++){
-
-			if (float(step*config_write)*dt == boxStrain[ind]){
-				LxCondensed[step] = Lx[ind];
-				LyCondensed[step] = Ly[ind];
-				LzCondensed[step] = Lz[ind];
-				ind++; 
-				break;
-			}
-			ind++;
-		}
-		
-	}
 
 	for (int step = 0; step < nConfig; step++){
 
@@ -272,9 +282,9 @@ int main()
 		delta_rx = float(step*config_write) * dt;
 		delta_rx -= lroundf(delta_rx / sidex)*sidex;
 
-		sidex = LxCondensed[step]; 
-		sidey = LyCondensed[step];
-		sidez = LzCondensed[step];
+		sidex = Lx[step]; 
+		sidey = Ly[step];
+		sidez = Lz[step];
 
 		nxbin = int(floorf(sidex / dx_ref));
 		nybin = int(floorf(sidey / dy_ref));
@@ -384,8 +394,7 @@ int main()
 	free(rx); free(ry); free(rz); 
 	free(px); free(py); free(pz);
 
-	free(Lx); free(Ly); free(Lz); free(boxStrain);
-	free(LxCondensed); free(LyCondensed); free(LzCondensed);
+	free(Lx); free(Ly); free(Lz); 
 	
 	cudaFree(d_rx); cudaFree(d_ry); cudaFree(d_rz);
 	cudaFree(d_px); cudaFree(d_py); cudaFree(d_pz);
