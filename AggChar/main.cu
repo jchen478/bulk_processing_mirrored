@@ -25,9 +25,8 @@ using namespace std;
 
 int main()
 {
-
 	int maxCon = 50;
-	int maxGr = 672; 
+	int maxGr = 5000; 
 	int maxBin = 672;
 	int npcn = 5000;
 
@@ -380,10 +379,19 @@ int main()
 		cudaMemcpy(&total_dist_inCon, d_total_dist_inCon, sizeof(float), cudaMemcpyDeviceToHost);
 
 		// 6. output to file or console
-		fprintf(ContactFile, "%10.4f %8d %4d %6.3f %8d %6.3f %4d %10.6f %10.6f\n",
-			float(step*config_write)*dt, num_groups, total_contact, float(total_contact) / float(nfib),
-			total_contact_no_joints, float(total_contact_no_joints) / float(nfib), total_overlap, 
-			total_forc/float(total_contact),total_dist_inCon/float(total_contact));
+		if (total_contact == 0){
+			fprintf(ContactFile, "%10.4f %8d %4d %6.3f %8d %6.3f %4d %10.6f %10.6f\n",
+				float(step*config_write)*dt, num_groups, total_contact, float(total_contact) / float(nfib),
+				total_contact_no_joints, float(total_contact_no_joints) / float(nfib), total_overlap, 
+				0.0,0.0);
+	
+		}
+		else {
+			fprintf(ContactFile, "%10.4f %8d %4d %6.3f %8d %6.3f %4d %10.6f %10.6f\n",
+				float(step*config_write)*dt, num_groups, total_contact, float(total_contact) / float(nfib),
+				total_contact_no_joints, float(total_contact_no_joints) / float(nfib), total_overlap, 
+				total_forc/float(total_contact),total_dist_inCon/float(total_contact));
+		}
 	}
 
 	fclose(ContactFile);

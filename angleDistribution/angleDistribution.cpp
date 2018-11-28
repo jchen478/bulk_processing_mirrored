@@ -21,6 +21,10 @@ void elasticEnergy(float *px, float *py, float *pz,
 
 int main(){
 
+	int nBin = 32; 
+	float binWidth = 0.05; 
+	float angLimit = float(nBin)*binWidth;
+
 	////////////////////////////////////////
 	//        input and output files      //
 	////////////////////////////////////////
@@ -29,10 +33,11 @@ int main(){
 	FILE *rxfile, *ryfile, *rzfile;
 	FILE *pxfile, *pyfile, *pzfile;
 	FILE *q0file, *q1file, *q2file, *q3file;
-	FILE *Eelastic_file, *Angle;
+	FILE *Angle, *dBend, *dTwist;
 	Parameters = fopen("Parameters.in", "r");
-	Eelastic_file = fopen("Eelastic.txt", "w");
 	Angle = fopen("Angle.txt", "w");
+	dBend = fopen("dBend.txt", "w");
+	dTwist = fopen("dTwist.txt", "w");
 	Equilibrium_Angles = fopen("Equilibrium_Angles.in", "r");
 	rxfile = fopen("rx.txt", "rb");
 	ryfile = fopen("ry.txt", "rb");
@@ -79,6 +84,7 @@ int main(){
 	float *rx, *ry, *rz;
 	float *q0, *q1, *q2, *q3;
 	float *dphi, *dtheta; 
+	int *dphiHist, *dthetaHist;
 
 	rx = (float*)malloc(nfib*nseg*sizeof(float));
 	ry = (float*)malloc(nfib*nseg*sizeof(float));
@@ -94,6 +100,8 @@ int main(){
 	phieq = (float*)malloc(nfib*nseg*sizeof(float));
 	dphi = (float*)malloc(nfib*nseg*sizeof(float));
 	dtheta = (float*)malloc(nfib*nseg*sizeof(float));
+	dphiHist = (int*)malloc(nBin*sizeof(int));
+	dthetaHist = (int*)malloc(nBin*sizeof(int));
 
 
 	R11 = (float*)malloc(nfib*nseg*sizeof(float));
@@ -172,6 +180,11 @@ int main(){
 		phiStd = 0.0;
 		thetaMax = 0.0; 
 		phiMax = 0.0;
+		// zero histogram
+		for (m=0; m<nBin; m++){
+			dphiHist[m] = 0;
+			dthetaHist[m] = 0;
+		}
 		elasticEnergy(px, py, pz,
 			rx, ry, rz,
 			q0, q1, q2, q3,
@@ -183,8 +196,13 @@ int main(){
 		for (m = 0 ; m < nfib; m++){
 			for (i = 1; i < nseg; i++){
 				mi = m*nseg+i;
+				if (dtheta[mi] >= angLimit || dphi[mi] >= angLimit) {
+					printf("increase number of bins\n"); 
+				}
 				thetaStd += (dtheta[mi] - thetaAvg)*(dtheta[mi] - thetaAvg); 
 				phiStd += (dphi[mi] - phiAvg)*(dphi[mi] - phiAvg); 
+				dthetaHist[int(floor(dtheta[mi]/binWidth))]++;
+				dphiHist[int(floor(dphi[mi]/binWidth))]++;
 			}
 		}
 		thetaStd /= float(nfib*(nseg-1)-1);	
@@ -193,7 +211,15 @@ int main(){
 		phiStd = sqrtf(phiStd);	
 		fprintf(Angle,"%8.3f %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n", 
 			float(step*config_write)*dt,thetaAvg, phiAvg, thetaStd, phiStd, thetaMax, phiMax);
-		fprintf(Eelastic_file,"%8.3f %10.6f %10.6f %10.6f\n", float(step*config_write)*dt,Ebend, Etwist, Eelastic);
+
+		fprintf(dBend,"%8.3f ", float(step*config_write)*dt);
+		fprintf(dTwist,"%8.3f ", float(step*config_write)*dt);
+		for (m=0; m<nBin; m++){
+			fprintf(dBend," %4d ", dthetaHist[m]); 
+			fprintf(dTwist," %4d ", dphiHist[m]); 
+		}
+		fprintf(dBend,"\n");
+		fprintf(dTwist,"\n");
 	}
 
 	free(rx); free(ry); free(rz);
@@ -217,8 +243,12 @@ int main(){
 	free(R31eq);
 	free(R32eq);
 	free(R33eq);
+	free(dphiHist);
+	free(dthetaHist);
 
-	fclose(Eelastic_file); fclose(Angle);
+	fclose(Angle);
+	fclose(dBend);
+	fclose(dTwist);
 	fclose(rxfile); fclose(ryfile); fclose(rzfile);
 	fclose(pxfile); fclose(pyfile); fclose(pzfile);
 	fclose(q0file); fclose(q1file); fclose(q2file); fclose(q3file);
